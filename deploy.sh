@@ -36,9 +36,11 @@ fi
 # Deploy Ingress Controller
 if [[ "$MODE" == "full" ]]; then
   echo "▶ Deploying ingress-nginx"
-  kubectl apply -f https://kind.sigs.k8s.io/examples/ingress/deploy-ingress-nginx.yaml
-  kubectl rollout status deployment ingress-nginx-controller \
-    -n ingress-nginx --timeout=180s
+# echo "▶ Deploying ingress-traefik"
+ kubectl apply -f https://kind.sigs.k8s.io/examples/ingress/deploy-ingress-nginx.yaml
+ kubectl rollout status deployment ingress-nginx-controller \
+   -n ingress-nginx --timeout=180s
+#helm upgrade --install traefik traefik/traefik -n traefik --create-namespace -f traefik/values.yaml
 fi
 
 # Namespace
@@ -80,7 +82,7 @@ helm upgrade --install vikunja-frontend vikunja-frontend -n vikunja -f vikunja-f
 
 # Resolve Keycloak Service IP
 echo " update hostalias ip for keycloak service in backend app pod"
-#sed -i.bak -E "s/ip: \"[0-9\.]+\"/ip: \"${KC_IP}\"/" vikunja-backend/values.yaml
+sed -i.bak -E "s/ip: \"[0-9\.]+\"/ip: \"${KC_IP}\"/" vikunja-backend/values.yaml
 
 # Vikunja Backend
 echo " Deploying backend app"

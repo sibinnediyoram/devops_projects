@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-hello-deployment
+  labels:
+    app: nginx-hello
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx-hello
+  template:
+    metadata:
+      labels:
+        app: nginx-hello
+    spec:
+      containers:
+        - name: nginx
+          image: sibindocker/images:nginxdemo
+          ports:
+            - containerPort: 80

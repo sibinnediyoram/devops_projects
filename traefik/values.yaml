@@ -1,0 +1,46 @@
+deployment:
+  replicas: 1
+
+service:
+  type: ClusterIP
+
+ports:
+  web:
+    port: 80
+    expose:
+      default: true
+    hostPort: 80
+
+  websecure:
+    port: 443
+    expose:
+      default: true
+    hostPort: 443
+
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+  name: traefik
+
+providers:
+  kubernetesIngress:
+    enabled: true
+  kubernetesCRD:
+    enabled: true
+
+logs:
+  general:
+    level: INFO
+  access:
+    enabled: true
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+ingressRoute:
+  dashboard:
+    enabled: true
