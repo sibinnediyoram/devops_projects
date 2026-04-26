@@ -1,0 +1,39 @@
+# ECK (Elastic Cloud on Kubernetes) Operator
+#
+# Install order:
+#   1. kubectl create -f https://download.elastic.co/downloads/eck/2.14.0/crds.yaml
+#   2. kubectl apply -f https://download.elastic.co/downloads/eck/2.14.0/operator.yaml
+#
+# Or via Helm (recommended — allows version pinning and GitOps):
+#   helm repo add elastic https://helm.elastic.co
+#   helm upgrade --install elastic-operator elastic/eck-operator \
+#     --namespace elastic-system --create-namespace \
+#     --version 2.14.0
+#
+# After the operator is running, apply the Elasticsearch CR:
+#   kubectl apply -f kubernetes/apps/media-search/elasticsearch.yaml
+#
+# ECK automatically creates:
+#   - StatefulSet for ES pods
+#   - Services: imago-media-search-es-http (HTTPS/9200), imago-media-search-es-transport (9300)
+#   - Secret: imago-media-search-es-elastic-user  (elastic superuser password)
+#   - Secret: imago-media-search-es-http-certs-public  (CA certificate)
+#   - TLS certificates (self-signed CA, renewed automatically)
+#
+# To retrieve the elastic password:
+#   kubectl get secret imago-media-search-es-elastic-user \
+#     -n imago-search -o jsonpath='{.data.elastic}' | base64 -d
+#
+# To trust the ECK CA in curl:
+#   kubectl get secret imago-media-search-es-http-certs-public \
+#     -n imago-search -o jsonpath='{.data.ca\.crt}' | base64 -d > /tmp/es-ca.crt
+#   curl --cacert /tmp/es-ca.crt -u "elastic:<password>" \
+#     https://imago-media-search-es-http:9200/_cluster/health
+#
+# Namespace for ECK operator (separate from application namespaces)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: elastic-system
+  labels:
+    app.kubernetes.io/part-of: platform

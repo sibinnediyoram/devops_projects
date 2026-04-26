@@ -1,0 +1,54 @@
+# Bootstrap ArgoCD
+# kubectl apply -k kubernetes/gitops/argocd/
+#
+# This uses the official ArgoCD install manifest with a configmap override
+# for our repository. In practice, use the ArgoCD Helm chart for more control.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd
+---
+# Apply ArgoCD manifests (reference to upstream — pin to a specific version in prod)
+# kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.12.0/manifests/install.yaml
+#
+# After ArgoCD is up, apply the App-of-Apps pattern below.
+---
+# ArgoCD configuration — point to this repository
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+data:
+  url: https://argocd.imago.de
+  # Repository is registered here or via ArgoCD CLI/UI
+  repositories: |
+    - url: https://github.com/imago/infrastructure
+      type: git
+---
+# ArgoCD RBAC — read-only for developers, admin for platform team
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-rbac-cm
+  namespace: argocd
+data:
+  policy.default: role:readonly
+  policy.csv: |
+    p, role:platform-admin, applications, *, */*, allow
+    p, role:platform-admin, clusters, get, *, allow
+    p, role:platform-admin, repositories, *, *, allow
+    g, imago:platform-team, role:platform-admin
+---
+# App-of-Apps: apply the environment-specific bootstrap after ArgoCD is running.
+#
+# Staging cluster:
+#   kubectl apply -f kubernetes/gitops/argocd/app-of-apps-staging.yaml
+#
+# Production cluster:
+#   kubectl apply -f kubernetes/gitops/argocd/app-of-apps-production.yaml
+#
+# Each file points to a different apps/ subdirectory:
+#   staging/    → base manifests (replicas: 1, no HPA)
+#   production/ → Kustomize overlays (replicas: 2-3, with HPA)

@@ -1,0 +1,71 @@
+# Helm values for Loki stack
+# Install with:
+#   helm repo add grafana https://grafana.github.io/helm-charts
+#   helm upgrade --install loki grafana/loki-stack \
+#     --namespace monitoring \
+#     --values kubernetes/monitoring/loki/loki-values.yaml
+
+loki:
+  enabled: true
+  config:
+    auth_enabled: false
+    server:
+      http_listen_port: 3100
+    ingester:
+      chunk_idle_period: 3m
+      chunk_block_size: 262144
+      chunk_retain_period: 1m
+    storage_config:
+      aws:
+        # Hetzner Object Storage (S3-compatible)
+        endpoint: nbg1.your-objectstorage.com
+        bucketnames: imago-loki-chunks
+        region: eu-central-1
+        access_key_id: ""    # Set via secret
+        secret_access_key: ""  # Set via secret
+        s3forcepathstyle: true
+      boltdb_shipper:
+        active_index_directory: /data/loki/boltdb-shipper-active
+        cache_location: /data/loki/boltdb-shipper-cache
+        shared_store: s3
+    schema_config:
+      configs:
+        - from: "2024-01-01"
+          store: boltdb-shipper
+          object_store: s3
+          schema: v12
+          index:
+            prefix: loki_index_
+            period: 24h
+    limits_config:
+      retention_period: 30d
+      ingestion_rate_mb: 10
+      ingestion_burst_size_mb: 20
+      max_query_length: 721h  # 30 days
+    compactor:
+      working_directory: /data/loki/compactor
+      shared_store: s3
+      retention_enabled: true
+
+promtail:
+  enabled: true
+  config:
+    clients:
+      - url: http://loki:3100/loki/api/v1/push
+    scrape_configs:
+      - job_name: kubernetes-pods
+        kubernetes_sd_configs:
+          - role: pod
+        pipeline_stages:
+          - docker: {}
+          - labeldrop:
+              - filename
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            target_label: container
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            target_label: app

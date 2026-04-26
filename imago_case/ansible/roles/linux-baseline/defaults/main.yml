@@ -1,0 +1,19 @@
+---
+ops_user: ubuntu
+ssh_port: 22
+allowed_ssh_cidr:
+  - "10.0.0.0/8"        # private network only — no direct SSH from internet
+
+ntp_servers:
+  - ntp1.hetzner.de
+  - ntp2.hetzner.de
+  - ntp3.hetzner.de
+
+required_packages:
+  - curl
+  - jq
+  - unattended-upgrades
+  - chrony
+  - ufw
+
+imago_managed_by: ansible   # written to /etc/imago-managed-by for ops identification

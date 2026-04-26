@@ -1,0 +1,23 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: media-download
+  namespace: imago-download
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: media-download
+  namespace: imago-download
+subjects:
+  - kind: ServiceAccount
+    name: media-download
+    namespace: imago-download
+roleRef:
+  kind: Role
+  name: media-download
+  apiGroup: rbac.authorization.k8s.io

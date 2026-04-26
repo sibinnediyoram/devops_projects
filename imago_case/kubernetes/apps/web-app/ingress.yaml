@@ -1,0 +1,76 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: web-app
+  namespace: imago-web
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`app.imago.de`)
+      kind: Rule
+      services:
+        - name: web-app
+          port: 80
+      middlewares:
+        - name: security-headers
+          namespace: imago-web
+        - name: rate-limit-web
+          namespace: imago-web
+  tls:
+    certResolver: letsencrypt
+---
+# Redirect HTTP to HTTPS
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: web-app-http-redirect
+  namespace: imago-web
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`app.imago.de`)
+      kind: Rule
+      middlewares:
+        - name: redirect-https
+          namespace: imago-web
+      services:
+        - name: web-app
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+  namespace: imago-web
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: security-headers
+  namespace: imago-web
+spec:
+  headers:
+    stsSeconds: 31536000
+    stsIncludeSubdomains: true
+    contentTypeNosniff: true
+    frameDeny: true
+    referrerPolicy: "strict-origin-when-cross-origin"
+    customResponseHeaders:
+      X-Powered-By: ""
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rate-limit-web
+  namespace: imago-web
+spec:
+  rateLimit:
+    average: 100
+    burst: 50
+    period: 1m

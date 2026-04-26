@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: media-download
+  namespace: imago-download
+  labels:
+    app: media-download
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: media-download
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: media-download
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8082"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: media-download
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        nodeAffinity:
+          # Prefer storage-pool nodes (CX51, 32 GB) for higher network throughput
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 80
+              preference:
+                matchExpressions:
+                  - key: node.imago.io/pool
+                    operator: In
+                    values: [storage]
+      containers:
+        - name: media-download
+          image: registry.imago.de/media-download:latest
+          ports:
+            - containerPort: 8082
+              name: http
+          env:
+            - name: S3_ENDPOINT
+              value: "https://nbg1.your-objectstorage.com"
+            - name: S3_BUCKET
+              value: "imago-media-assets"
+            - name: SIGNED_URL_TTL_SECONDS
+              value: "900"
+            - name: APP_ENV
+              value: "production"
+          envFrom:
+            - secretRef:
+                name: media-download-secrets
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8082
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8082
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: media-download
+  namespace: imago-download
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: media-download
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: media-download
+  namespace: imago-download

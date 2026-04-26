@@ -1,0 +1,23 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: web-app
+  namespace: imago-web
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: web-app
+  namespace: imago-web
+subjects:
+  - kind: ServiceAccount
+    name: web-app
+    namespace: imago-web
+roleRef:
+  kind: Role
+  name: web-app
+  apiGroup: rbac.authorization.k8s.io
