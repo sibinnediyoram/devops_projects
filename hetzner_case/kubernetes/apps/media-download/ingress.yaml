@@ -1,0 +1,84 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: media-download
+  namespace: hetzner_demo-download
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`dl.hetzner_demo.de`)
+      kind: Rule
+      services:
+        - name: media-download
+          port: 8082
+      middlewares:
+        - name: download-rate-limit
+          namespace: hetzner_demo-download
+        - name: security-headers-dl
+          namespace: hetzner_demo-download
+  tls:
+    certResolver: letsencrypt
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: download-rate-limit
+  namespace: hetzner_demo-download
+spec:
+  rateLimit:
+    # Signed URL generation endpoint is rate-limited more aggressively
+    average: 100
+    burst: 20
+    period: 1m
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: security-headers-dl
+  namespace: hetzner_demo-download
+spec:
+  headers:
+    stsSeconds: 31536000
+    contentTypeNosniff: true
+    customResponseHeaders:
+      X-Content-Type-Options: "nosniff"
+      Cache-Control: "private, no-store"  # prevent CDN caching of signed URLs
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: media-download-policy
+  namespace: hetzner_demo-download
+spec:
+  podSelector:
+    matchLabels:
+      app: media-download
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Accept traffic from Traefik ingress controller only
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - port: 8082
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8082
+  egress:
+    # Egress to Hetzner Object Storage (S3-compatible HTTPS endpoint)
+    - ports:
+        - port: 443
+          protocol: TCP
+    # DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP

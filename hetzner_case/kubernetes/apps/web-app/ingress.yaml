@@ -1,0 +1,76 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: web-app
+  namespace: hetzner_demo-web
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`app.hetzner_demo.de`)
+      kind: Rule
+      services:
+        - name: web-app
+          port: 80
+      middlewares:
+        - name: security-headers
+          namespace: hetzner_demo-web
+        - name: rate-limit-web
+          namespace: hetzner_demo-web
+  tls:
+    certResolver: letsencrypt
+---
+# Redirect HTTP to HTTPS
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: web-app-http-redirect
+  namespace: hetzner_demo-web
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`app.hetzner_demo.de`)
+      kind: Rule
+      middlewares:
+        - name: redirect-https
+          namespace: hetzner_demo-web
+      services:
+        - name: web-app
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+  namespace: hetzner_demo-web
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: security-headers
+  namespace: hetzner_demo-web
+spec:
+  headers:
+    stsSeconds: 31536000
+    stsIncludeSubdomains: true
+    contentTypeNosniff: true
+    frameDeny: true
+    referrerPolicy: "strict-origin-when-cross-origin"
+    customResponseHeaders:
+      X-Powered-By: ""
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rate-limit-web
+  namespace: hetzner_demo-web
+spec:
+  rateLimit:
+    average: 100
+    burst: 50
+    period: 1m

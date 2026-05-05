@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: web-app
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: hetzner_demo
+  source:
+    repoURL: https://github.com/sibinnediyoram/demo_repository
+    targetRevision: main
+    path: hetzner_demo_case/kubernetes/overlays/production/web-app
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: hetzner_demo-web
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  ignoreDifferences:
+    # HPA manages replica count at runtime — prevent ArgoCD from resetting it
+    - group: apps
+      kind: Deployment
+      name: web-app
+      jsonPointers:
+        - /spec/replicas

@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app
+  namespace: hetzner_demo-web
+  labels:
+    app: web-app
+    app.kubernetes.io/part-of: hetzner_demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web-app
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: web-app
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: web-app
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: web-app
+                topologyKey: kubernetes.io/hostname
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node.hetzner_demo.io/pool
+                    operator: In
+                    values: [general]
+      containers:
+        - name: web-app
+          image: registry.hetzner_demo.de/web-app:latest  # replaced by CI/CD
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: SEARCH_SERVICE_URL
+              value: "http://media-search.hetzner_demo-search.svc.cluster.local:8081"
+            - name: DOWNLOAD_SERVICE_URL
+              value: "http://media-download.hetzner_demo-download.svc.cluster.local:8082"
+            - name: APP_ENV
+              value: "production"
+          envFrom:
+            - secretRef:
+                name: web-app-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: web-app
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: web-app
+  namespace: hetzner_demo-web

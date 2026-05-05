@@ -1,0 +1,209 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "kubernetes/apps/**"
+      - "kubernetes/overlays/**"
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Service to deploy (web-app, media-search, media-download)"
+        required: true
+        type: choice
+        options:
+          - web-app
+          - media-search
+          - media-download
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  detect-and-build:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.detect.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - id: detect
+        name: Detect changed services
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            services='["${{ github.event.inputs.service }}"]'
+          else
+            changed=$(git diff --name-only HEAD~1 HEAD -- kubernetes/apps/ kubernetes/overlays/ | \
+              grep -oP 'kubernetes/(?:apps|overlays/production)/\K[^/]+' | sort -u | \
+              jq -R -s -c 'split("\n")[:-1]')
+            services=$changed
+          fi
+          echo "matrix={\"service\":$services}" >> $GITHUB_OUTPUT
+
+      - name: Log in to container registry
+        uses: docker/login-action@v3
+        with:
+          registry: registry.hetzner_demo.de
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push images
+        if: steps.detect.outputs.matrix != '{"service":[]}'
+        run: |
+          SERVICES=$(echo '${{ steps.detect.outputs.matrix }}' | jq -r '.service[]')
+          for SERVICE in $SERVICES; do
+            echo "Building $SERVICE"
+            docker buildx build \
+              --platform linux/amd64 \
+              --tag registry.hetzner_demo.de/${SERVICE}:${{ github.sha }} \
+              --tag registry.hetzner_demo.de/${SERVICE}:latest \
+              --push \
+              ./services/${SERVICE}
+          done
+
+      - name: Scan images for vulnerabilities (Trivy)
+        if: steps.detect.outputs.matrix != '{"service":[]}'
+        run: |
+          SERVICES=$(echo '${{ steps.detect.outputs.matrix }}' | jq -r '.service[]')
+          for SERVICE in $SERVICES; do
+            echo "Scanning registry.hetzner_demo.de/${SERVICE}:${{ github.sha }}"
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              aquasec/trivy:latest image \
+              --exit-code 1 \
+              --severity CRITICAL \
+              --ignore-unfixed \
+              registry.hetzner_demo.de/${SERVICE}:${{ github.sha }}
+          done
+
+  deploy-to-staging:
+    needs: detect-and-build
+    if: needs.detect-and-build.outputs.matrix != '{"service":[]}'
+    runs-on: ubuntu-latest
+    environment: staging
+    strategy:
+      matrix: ${{ fromJson(needs.detect-and-build.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Update image tag in staging base (kustomize)
+        run: |
+          cd hetzner_demo_case/kubernetes/apps/${{ matrix.service }}
+          kustomize edit set image registry.hetzner_demo.de/${{ matrix.service }}:${{ github.sha }}
+
+      - name: Commit updated staging kustomization
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add hetzner_demo_case/kubernetes/apps/${{ matrix.service }}/kustomization.yaml
+          git commit -m "deploy(${{ matrix.service }}): staging → ${{ github.sha }}" || echo "No changes to commit"
+          git push
+
+      - name: Trigger ArgoCD sync (staging)
+        run: |
+          curl -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.ARGOCD_TOKEN_STAGING }}" \
+            -H "Content-Type: application/json" \
+            "https://argocd.staging.hetzner_demo.de/api/v1/applications/${{ matrix.service }}/sync" \
+            -d '{"revision":"HEAD","prune":false}'
+
+      - name: Wait for rollout
+        run: |
+          sleep 60
+          kubectl rollout status deployment/${{ matrix.service }} \
+            -n hetzner_demo-$(echo ${{ matrix.service }} | sed 's/web-app/web/;s/media-search/search/;s/media-download/download/') \
+            --timeout=300s
+        env:
+          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG_STAGING }}
+
+  smoke-test-staging:
+    needs: deploy-to-staging
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.detect-and-build.outputs.matrix) }}
+    steps:
+      - name: Health check staging
+        run: |
+          SERVICE="${{ matrix.service }}"
+          case $SERVICE in
+            web-app)        URL="https://app.staging.hetzner_demo.de/readyz" ;;
+            media-search)   URL="https://app.staging.hetzner_demo.de/search/readyz" ;;
+            media-download) URL="https://dl.staging.hetzner_demo.de/readyz" ;;
+          esac
+          for i in $(seq 1 10); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+            if [ "$STATUS" = "200" ]; then
+              echo "$SERVICE is healthy (HTTP 200)"
+              exit 0
+            fi
+            echo "Attempt $i: got HTTP $STATUS, retrying in 15s..."
+            sleep 15
+          done
+          echo "Smoke test failed after 10 attempts"
+          exit 1
+
+  promote-to-production:
+    needs: smoke-test-staging
+    runs-on: ubuntu-latest
+    environment: production  # Requires manual approval in GitHub environment settings
+    strategy:
+      matrix: ${{ fromJson(needs.detect-and-build.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Update image tag in production overlay (kustomize)
+        # This is the actual promotion artifact — the production overlay gets a
+        # specific SHA committed, separate from what staging deployed.
+        run: |
+          cd hetzner_demo_case/kubernetes/overlays/production/${{ matrix.service }}
+          kustomize edit set image registry.hetzner_demo.de/${{ matrix.service }}:${{ github.sha }}
+
+      - name: Commit updated production kustomization
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add hetzner_demo_case/kubernetes/overlays/production/${{ matrix.service }}/kustomization.yaml
+          git commit -m "deploy(${{ matrix.service }}): production → ${{ github.sha }}" || echo "No changes to commit"
+          git push
+
+      # ArgoCD detects the kustomization.yaml change and auto-syncs.
+      # Trigger immediately to avoid waiting for the polling interval.
+      - name: Trigger ArgoCD sync (production)
+        run: |
+          curl -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.ARGOCD_TOKEN_PRODUCTION }}" \
+            -H "Content-Type: application/json" \
+            "https://argocd.hetzner_demo.de/api/v1/applications/${{ matrix.service }}/sync" \
+            -d '{"revision":"HEAD","prune":false}'
+
+      - name: Slack notification
+        run: |
+          curl -s -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+            -H "Content-Type: application/json" \
+            -d "{\"text\": \"Deployed *${{ matrix.service }}* to production — commit \`${{ github.sha }}\`\"}"

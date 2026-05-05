@@ -1,0 +1,26 @@
+# Bootstrap for the PRODUCTION cluster.
+# Apply this once after ArgoCD is installed on the production cluster:
+#   kubectl apply -f kubernetes/gitops/argocd/app-of-apps-production.yaml
+#
+# ArgoCD will then discover and deploy all apps from the production/ directory,
+# which point to the Kustomize overlays (replicas: 2-3, with HPA).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-of-apps
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/sibinnediyoram/demo_repository
+    targetRevision: main
+    path: hetzner_demo_case/kubernetes/gitops/argocd/apps/production
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -1,0 +1,4 @@
+hcloud_token  = "<HETZNER_CLOUD_API_TOKEN>"
+cluster_token = "<generate-with-openssl-rand-hex-32>"
+ssh_key_name  = "<ops-team-key>"
+bastion_ips   = ["<VPN_IP_ADDRESS>/32"]

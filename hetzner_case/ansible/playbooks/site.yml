@@ -1,0 +1,13 @@
+---
+# Top-level playbook — applies all host-type baselines.
+#
+# Usage:
+#   ansible-playbook playbooks/site.yml -i inventories/production/hosts.yml
+#   ansible-playbook playbooks/site.yml -i inventories/staging/hosts.yml --check
+#
+# To target a single host type:
+#   ansible-playbook playbooks/linux-baseline.yml -i inventories/production/hosts.yml
+#   ansible-playbook playbooks/windows-baseline.yml -i inventories/production/hosts.yml
+
+- import_playbook: linux-baseline.yml
+- import_playbook: windows-baseline.yml
