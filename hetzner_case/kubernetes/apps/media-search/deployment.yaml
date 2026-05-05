@@ -1,0 +1,158 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: media-search
+  namespace: hetzner_demo-search
+  labels:
+    app: media-search
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: media-search
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: media-search
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: media-search
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: media-search
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: media-search
+          image: registry.hetzner_demo.de/media-search:latest
+          ports:
+            - containerPort: 8081
+              name: http
+          env:
+            - name: ELASTICSEARCH_URL
+              # ECK creates this service; uses HTTPS with self-signed CA by default
+              value: "https://hetzner_demo-media-search-es-http:9200"
+            - name: ELASTICSEARCH_INDEX
+              value: "hetzner_demo-media"
+            - name: APP_ENV
+              value: "production"
+            - name: ELASTICSEARCH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  # ECK auto-creates this secret with the elastic superuser password
+                  name: hetzner_demo-media-search-es-elastic-user
+                  key: elastic
+          envFrom:
+            - secretRef:
+                name: media-search-secrets
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: media-search
+  namespace: hetzner_demo-search
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: media-search
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: media-search
+  namespace: hetzner_demo-search
+  labels:
+    app: media-search
+spec:
+  selector:
+    app: media-search
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: media-search-policy
+  namespace: hetzner_demo-search
+spec:
+  podSelector:
+    matchLabels:
+      app: media-search
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Only accept traffic from the web app namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: hetzner_demo-web
+      ports:
+        - port: 8081
+    # Allow Prometheus scraping from monitoring namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8081
+  egress:
+    # Allow access to ECK-managed ElasticSearch
+    - to:
+        - podSelector:
+            matchLabels:
+              elasticsearch.k8s.elastic.co/cluster-name: hetzner_demo-media-search
+      ports:
+        - port: 9200
+    # DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+# ElasticSearch NetworkPolicy is defined in elasticsearch.yaml using ECK pod labels.
+# (selector: elasticsearch.k8s.elastic.co/cluster-name: hetzner_demo-media-search)

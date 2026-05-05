@@ -1,0 +1,7 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: media-search
+  namespace: hetzner_demo-search
+spec:
+  replicas: 2

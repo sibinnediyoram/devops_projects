@@ -1,0 +1,86 @@
+---
+- name: Install required packages
+  ansible.builtin.apt:
+    name: "{{ required_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Harden SSH — disable root login
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^PermitRootLogin"
+    line: "PermitRootLogin no"
+    state: present
+  notify: restart sshd
+
+- name: Harden SSH — disable password authentication
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^PasswordAuthentication"
+    line: "PasswordAuthentication no"
+    state: present
+  notify: restart sshd
+
+- name: Harden SSH — restrict to ops user
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^AllowUsers"
+    line: "AllowUsers {{ ops_user }}"
+    state: present
+  notify: restart sshd
+
+- name: Configure firewall — default deny inbound
+  community.general.ufw:
+    state: enabled
+    policy: deny
+    direction: incoming
+
+- name: Configure firewall — allow SSH from private network only
+  community.general.ufw:
+    rule: allow
+    port: "{{ ssh_port }}"
+    proto: tcp
+    src: "{{ item }}"
+  loop: "{{ allowed_ssh_cidr }}"
+
+- name: Configure firewall — allow node_exporter from monitoring subnet
+  community.general.ufw:
+    rule: allow
+    port: "9100"
+    proto: tcp
+    src: "{{ monitoring_subnet }}"
+
+- name: Configure NTP with chrony
+  ansible.builtin.template:
+    src: chrony.conf.j2
+    dest: /etc/chrony/chrony.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart chrony
+
+- name: Enable unattended-upgrades for security patches
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+    mode: "0644"
+
+- name: Write management marker file
+  ansible.builtin.copy:
+    dest: /etc/hetzner_demo-managed-by
+    content: "{{ hetzner_demo_managed_by }}\n"
+    mode: "0444"
+
+handlers:
+  - name: restart sshd
+    ansible.builtin.service:
+      name: sshd
+      state: restarted
+
+  - name: restart chrony
+    ansible.builtin.service:
+      name: chrony
+      state: restarted

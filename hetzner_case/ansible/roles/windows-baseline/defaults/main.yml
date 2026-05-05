@@ -1,0 +1,22 @@
+---
+windows_exporter_version: "0.28.1"
+windows_exporter_port: 9182
+windows_exporter_install_dir: 'C:\Program Files\windows_exporter'
+
+windows_exporter_enabled_collectors:
+  - cpu
+  - cs
+  - logical_disk
+  - net
+  - os
+  - service
+  - system
+
+# Services that must be running and set to auto-start on every Windows host.
+# Override per-host in inventory vars if a service is host-specific.
+required_services:
+  - name: ImagoLegacyService
+    state: started
+    start_mode: auto
+
+winrm_port: 5986

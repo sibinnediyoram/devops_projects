@@ -1,0 +1,23 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: web-app
+  namespace: hetzner_demo-web
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: web-app
+  namespace: hetzner_demo-web
+subjects:
+  - kind: ServiceAccount
+    name: web-app
+    namespace: hetzner_demo-web
+roleRef:
+  kind: Role
+  name: web-app
+  apiGroup: rbac.authorization.k8s.io

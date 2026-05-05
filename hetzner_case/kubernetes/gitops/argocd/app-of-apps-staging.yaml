@@ -1,0 +1,26 @@
+# Bootstrap for the STAGING cluster.
+# Apply this once after ArgoCD is installed on the staging cluster:
+#   kubectl apply -f kubernetes/gitops/argocd/app-of-apps-staging.yaml
+#
+# ArgoCD will then discover and deploy all apps from the staging/ directory,
+# which point to the base manifests (replicas: 1, no HPA).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-of-apps
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/sibinnediyoram/demo_repository
+    targetRevision: main
+    path: hetzner_demo_case/kubernetes/gitops/argocd/apps/staging
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

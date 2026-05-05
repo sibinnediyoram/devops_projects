@@ -1,0 +1,14 @@
+---
+node_exporter_version: "1.8.2"
+node_exporter_port: 9100
+node_exporter_user: node_exporter
+
+node_exporter_enabled_collectors:
+  - cpu
+  - diskstats
+  - filesystem
+  - loadavg
+  - meminfo
+  - netdev
+  - systemd
+  - time

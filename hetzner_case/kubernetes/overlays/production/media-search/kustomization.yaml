@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+bases:
+  - ../../../apps/media-search
+
+# Production-only resources not present in the base
+resources:
+  - hpa.yaml
+
+# Patch replica count to production level
+patches:
+  - path: replica-patch.yaml
+
+# CI overwrites newTag on each production promotion
+images:
+  - name: registry.hetzner_demo.de/media-search
+    newTag: latest
