@@ -1,0 +1,41 @@
+# Ignore local SQLite databases
+*.db
+*.sqlite3
+
+# Ignore personal expense files
+expenses.json
+*.csv
+# Ignore log files
+*.log
+# Ignore temporary files
+*.tmp
+*.bak
+# Ignore IDE specific files
+.vscode/
+.idea/
+# Ignore node modules
+node_modules/
+# Ignore Python virtual environments
+venv/
+__pycache__/
+# Ignore compiled files
+*.pyc
+*.o
+*.so
+# Ignore coverage reports
+coverage/
+*.lcov
+# Ignore build artifacts
+dist/
+build/
+# Ignore environment variable files
+.env
+# Ignore sensitive configuration files
+config.yaml
+# Ignore system files
+.DS_Store
+Thumbs.db
+# Ignore any other files that should not be committed
+*.log
+*.tmp
+
