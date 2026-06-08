@@ -1,0 +1,25 @@
+# HTTP test file for the API endpoints.
+# Run locally with: uvicorn api.main:app --port 8000
+#
+# How to use:
+#   VS Code  — install the "REST Client" extension, then click "Send Request" above each block.
+#   IntelliJ — open this file and click the green play button next to each request.
+#   curl     — copy the URL from each block and run manually.
+#
+# Requests are separated by ###.
+# Note: /ready returns 503 for ~5 seconds on startup, then 200 once the app is ready.
+
+GET http://127.0.0.1:8000/hello
+Accept: application/json
+
+###
+
+# Liveness probe — always returns 200 while the process is running.
+GET http://127.0.0.1:8000/alive
+Accept: application/json
+
+###
+
+# Readiness probe — returns 503 during startup, 200 once ready.
+GET http://127.0.0.1:8000/ready
+Accept: application/json

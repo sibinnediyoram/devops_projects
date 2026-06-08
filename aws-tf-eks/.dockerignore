@@ -1,0 +1,7 @@
+.git
+.venv
+.pre-commit-config.yaml
+__pycache__
+*.pyc
+tests/
+README.md

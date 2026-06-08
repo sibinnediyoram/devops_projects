@@ -1,0 +1,14 @@
+# IntelliJ
+.idea
+
+# OS X
+.DS_Store
+
+#python venv
+.venv
+
+#terraform
+.terraform
+terraform.tfstate
+terraform.tfstate.backup
+.terraform.lock.hcl
