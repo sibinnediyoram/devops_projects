@@ -53,3 +53,4 @@ Thumbs.db
 terraform.tfstate
 terraform.tfstate.backup
 .terraform.lock.hcl
+.aider*

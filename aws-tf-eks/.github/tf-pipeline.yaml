@@ -1,0 +1,180 @@
+name: CI/CD for AWS Terraform EKS
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    paths:
+      - 'aws-tf-eks/**'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'aws-tf-eks/**'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_ENVS_ROOT: aws-tf-eks/terraform/envs
+
+jobs:
+  fmt:
+    name: Terraform Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+        working-directory: aws-tf-eks/terraform
+
+  validate:
+    name: Validate (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [dev, staging, prod]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init -backend=false
+        working-directory: ${{ env.TF_ENVS_ROOT }}/${{ matrix.environment }}
+
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: ${{ env.TF_ENVS_ROOT }}/${{ matrix.environment }}
+
+  lint:
+    name: Lint Terraform Configuration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Install TFLint
+        run: wget -O - https://raw.githubusercontent.com/terraform-linters/tflint/master/install.sh | bash
+
+      - name: Run TFLint
+        run: tflint --recursive --config .github/.tflint.hcl
+        working-directory: aws-tf-eks
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Install tfsec
+        run: |
+          curl -L "$(curl -s https://api.github.com/repos/aquasecurity/tfsec/releases/latest | grep browser_download_url | grep linux | cut -d '"' -f 4)" -o tfsec
+          chmod +x tfsec
+        working-directory: aws-tf-eks
+
+      - name: Run tfsec
+        run: ./tfsec terraform
+        working-directory: aws-tf-eks
+
+  test:
+    name: Plan (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+    needs: [fmt, validate, lint, security]
+    strategy:
+      matrix:
+        environment: [dev, staging, prod]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # TODO: replace with the real per-environment GitHub Actions deploy role before use
+          role-to-assume: arn:aws:iam::ACCOUNT_ID:role/github-actions-deploy
+          aws-region: eu-central-1
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ${{ env.TF_ENVS_ROOT }}/${{ matrix.environment }}
+
+      - name: Terraform Plan
+        run: terraform plan -detailed-exitcode
+        working-directory: ${{ env.TF_ENVS_ROOT }}/${{ matrix.environment }}
+
+  deploy:
+    name: Deploy (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      matrix:
+        environment: [dev, staging, prod]
+    environment: ${{ matrix.environment }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # TODO: replace with the real per-environment GitHub Actions deploy role before use
+          role-to-assume: arn:aws:iam::ACCOUNT_ID:role/github-actions-deploy
+          aws-region: eu-central-1
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ${{ env.TF_ENVS_ROOT }}/${{ matrix.environment }}
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+        working-directory: ${{ env.TF_ENVS_ROOT }}/${{ matrix.environment }}
+
+  cleanup:
+    name: Cleanup Dev Resources (on pull request close)
+    runs-on: ubuntu-latest
+    needs: [validate, lint]
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    environment: dev
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # TODO: replace with the real per-environment GitHub Actions deploy role before use
+          role-to-assume: arn:aws:iam::ACCOUNT_ID:role/github-actions-deploy
+          aws-region: eu-central-1
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ${{ env.TF_ENVS_ROOT }}/dev
+
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve
+        working-directory: ${{ env.TF_ENVS_ROOT }}/dev
