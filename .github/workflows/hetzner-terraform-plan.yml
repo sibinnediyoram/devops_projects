@@ -1,11 +1,18 @@
-name: Terraform Plan
+name: Hetzner Terraform Plan
 
 on:
   pull_request:
     paths:
-      - "terraform/**"
+      - "hetzner_k8s_infrastructure/terraform/**"
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to plan
+        type: choice
+        options: [staging, production]
+        default: staging
 
 permissions:
   contents: read
@@ -13,6 +20,7 @@ permissions:
 
 jobs:
   detect-changes:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     outputs:
       environments: ${{ steps.detect.outputs.environments }}
@@ -21,21 +29,24 @@ jobs:
       - id: detect
         name: Detect changed environments
         run: |
-          changed=$(git diff --name-only origin/main...HEAD -- terraform/environments/ | \
-            grep -oP 'terraform/environments/\K[^/]+' | sort -u | jq -R -s -c 'split("\n")[:-1]')
+          changed=$(git diff --name-only origin/main...HEAD -- hetzner_k8s_infrastructure/terraform/environments/ | \
+            grep -oP 'hetzner_k8s_infrastructure/terraform/environments/\K[^/]+' | sort -u | jq -R -s -c 'split("\n")[:-1]')
           echo "environments=$changed" >> $GITHUB_OUTPUT
 
   plan:
     needs: detect-changes
-    if: needs.detect-changes.outputs.environments != '[]'
+    if: |
+      always() &&
+      (github.event_name == 'workflow_dispatch' ||
+       (needs.detect-changes.result == 'success' && needs.detect-changes.outputs.environments != '[]'))
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        environment: ${{ fromJson(needs.detect-changes.outputs.environments) }}
+        environment: ${{ github.event_name == 'workflow_dispatch' && fromJson(format('["{0}"]', inputs.environment)) || fromJson(needs.detect-changes.outputs.environments) }}
     environment: ${{ matrix.environment }}
     defaults:
       run:
-        working-directory: terraform/environments/${{ matrix.environment }}
+        working-directory: hetzner_k8s_infrastructure/terraform/environments/${{ matrix.environment }}
 
     steps:
       - uses: actions/checkout@v4
@@ -65,11 +76,12 @@ jobs:
           TF_VAR_bastion_ips: ${{ secrets.BASTION_IPS }}
 
       - name: Post Plan to PR
+        if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const output = fs.readFileSync('terraform/environments/${{ matrix.environment }}/plan-output.txt', 'utf8');
+            const output = fs.readFileSync('hetzner_k8s_infrastructure/terraform/environments/${{ matrix.environment }}/plan-output.txt', 'utf8');
             const truncated = output.length > 65000 ? output.slice(-65000) + '\n...(truncated)' : output;
             const body = `### Terraform Plan — \`${{ matrix.environment }}\`
             \`\`\`hcl

@@ -10,6 +10,17 @@ on:
     paths:
       - 'aws-tf-eks/**'
   workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [dev, staging, prod]
+        default: dev
+      action:
+        description: Terraform action to run
+        type: choice
+        options: [plan, apply, destroy]
+        default: plan
 
 permissions:
   id-token: write
@@ -68,8 +79,8 @@ jobs:
         run: wget -O - https://raw.githubusercontent.com/terraform-linters/tflint/master/install.sh | bash
 
       - name: Run TFLint
-        run: tflint --recursive --config .github/.tflint.hcl
-        working-directory: aws-tf-eks
+        run: tflint --recursive
+        working-directory: aws-tf-eks/terraform
 
   security:
     name: Security Scan
@@ -121,14 +132,11 @@ jobs:
         working-directory: ${{ env.TF_ENVS_ROOT }}/${{ matrix.environment }}
 
   deploy:
-    name: Deploy (${{ matrix.environment }})
+    name: Apply (${{ inputs.environment }})
     runs-on: ubuntu-latest
     needs: [test]
-    if: github.ref == 'refs/heads/main'
-    strategy:
-      matrix:
-        environment: [dev, staging, prod]
-    environment: ${{ matrix.environment }}
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
+    environment: ${{ inputs.environment }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -145,18 +153,18 @@ jobs:
 
       - name: Terraform Init
         run: terraform init
-        working-directory: ${{ env.TF_ENVS_ROOT }}/${{ matrix.environment }}
+        working-directory: ${{ env.TF_ENVS_ROOT }}/${{ inputs.environment }}
 
       - name: Terraform Apply
         run: terraform apply -auto-approve
-        working-directory: ${{ env.TF_ENVS_ROOT }}/${{ matrix.environment }}
+        working-directory: ${{ env.TF_ENVS_ROOT }}/${{ inputs.environment }}
 
-  cleanup:
-    name: Cleanup Dev Resources (on pull request close)
+  destroy:
+    name: Destroy (${{ inputs.environment }})
     runs-on: ubuntu-latest
-    needs: [validate, lint]
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
-    environment: dev
+    needs: [test]
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'destroy'
+    environment: ${{ inputs.environment }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -173,8 +181,8 @@ jobs:
 
       - name: Terraform Init
         run: terraform init
-        working-directory: ${{ env.TF_ENVS_ROOT }}/dev
+        working-directory: ${{ env.TF_ENVS_ROOT }}/${{ inputs.environment }}
 
       - name: Terraform Destroy
         run: terraform destroy -auto-approve
-        working-directory: ${{ env.TF_ENVS_ROOT }}/dev
+        working-directory: ${{ env.TF_ENVS_ROOT }}/${{ inputs.environment }}

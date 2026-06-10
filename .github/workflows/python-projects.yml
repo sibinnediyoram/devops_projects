@@ -1,0 +1,43 @@
+name: Python Projects
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    paths:
+      - 'python_projects/**'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'python_projects/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    name: Lint & Test (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project:
+          - url_shortner_app
+          - expense_tracker_csv
+          - expense_tracker_sqlite
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install tooling
+        run: pip install ruff pytest
+
+      - name: Ruff Lint
+        run: ruff check python_projects/${{ matrix.project }}
+
+      - name: Run tests
+        run: pytest python_projects/${{ matrix.project }} -q || [ $? -eq 5 ]

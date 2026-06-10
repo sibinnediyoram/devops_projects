@@ -1,12 +1,12 @@
-name: Build and Deploy
+name: Hetzner Build and Deploy
 
 on:
   push:
     branches:
       - main
     paths:
-      - "kubernetes/apps/**"
-      - "kubernetes/overlays/**"
+      - "hetzner_k8s_infrastructure/kubernetes/apps/**"
+      - "hetzner_k8s_infrastructure/kubernetes/overlays/**"
   workflow_dispatch:
     inputs:
       service:
@@ -46,8 +46,8 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             services='["${{ github.event.inputs.service }}"]'
           else
-            changed=$(git diff --name-only HEAD~1 HEAD -- kubernetes/apps/ kubernetes/overlays/ | \
-              grep -oP 'kubernetes/(?:apps|overlays/production)/\K[^/]+' | sort -u | \
+            changed=$(git diff --name-only HEAD~1 HEAD -- hetzner_k8s_infrastructure/kubernetes/apps/ hetzner_k8s_infrastructure/kubernetes/overlays/ | \
+              grep -oP 'hetzner_k8s_infrastructure/kubernetes/(?:apps|overlays/production)/\K[^/]+' | sort -u | \
               jq -R -s -c 'split("\n")[:-1]')
             services=$changed
           fi
@@ -74,7 +74,7 @@ jobs:
               --tag registry.hetzner_demo.de/${SERVICE}:${{ github.sha }} \
               --tag registry.hetzner_demo.de/${SERVICE}:latest \
               --push \
-              ./services/${SERVICE}
+              ./hetzner_k8s_infrastructure/services/${SERVICE}
           done
 
       - name: Scan images for vulnerabilities (Trivy)
@@ -94,7 +94,7 @@ jobs:
 
   deploy-to-staging:
     needs: detect-and-build
-    if: needs.detect-and-build.outputs.matrix != '{"service":[]}'
+    if: github.event_name == 'workflow_dispatch' && needs.detect-and-build.outputs.matrix != '{"service":[]}'
     runs-on: ubuntu-latest
     environment: staging
     strategy:
@@ -109,14 +109,14 @@ jobs:
 
       - name: Update image tag in staging base (kustomize)
         run: |
-          cd hetzner_demo_case/kubernetes/apps/${{ matrix.service }}
+          cd hetzner_k8s_infrastructure/kubernetes/apps/${{ matrix.service }}
           kustomize edit set image registry.hetzner_demo.de/${{ matrix.service }}:${{ github.sha }}
 
       - name: Commit updated staging kustomization
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add hetzner_demo_case/kubernetes/apps/${{ matrix.service }}/kustomization.yaml
+          git add hetzner_k8s_infrastructure/kubernetes/apps/${{ matrix.service }}/kustomization.yaml
           git commit -m "deploy(${{ matrix.service }}): staging → ${{ github.sha }}" || echo "No changes to commit"
           git push
 
@@ -147,9 +147,9 @@ jobs:
         run: |
           SERVICE="${{ matrix.service }}"
           case $SERVICE in
-            web-app)        URL="https://app.staging.hetzner_demo.de/readyz" ;;
-            media-search)   URL="https://app.staging.hetzner_demo.de/search/readyz" ;;
-            media-download) URL="https://dl.staging.hetzner_demo.de/readyz" ;;
+            web-app)        URL="https://app.staging.hetzner_demo.de/ready" ;;
+            media-search)   URL="https://app.staging.hetzner_demo.de/search/ready" ;;
+            media-download) URL="https://dl.staging.hetzner_demo.de/ready" ;;
           esac
           for i in $(seq 1 10); do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
@@ -181,14 +181,14 @@ jobs:
         # This is the actual promotion artifact — the production overlay gets a
         # specific SHA committed, separate from what staging deployed.
         run: |
-          cd hetzner_demo_case/kubernetes/overlays/production/${{ matrix.service }}
+          cd hetzner_k8s_infrastructure/kubernetes/overlays/production/${{ matrix.service }}
           kustomize edit set image registry.hetzner_demo.de/${{ matrix.service }}:${{ github.sha }}
 
       - name: Commit updated production kustomization
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add hetzner_demo_case/kubernetes/overlays/production/${{ matrix.service }}/kustomization.yaml
+          git add hetzner_k8s_infrastructure/kubernetes/overlays/production/${{ matrix.service }}/kustomization.yaml
           git commit -m "deploy(${{ matrix.service }}): production → ${{ github.sha }}" || echo "No changes to commit"
           git push
 
