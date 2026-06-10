@@ -18,6 +18,26 @@ The setup is designed to be fully self-contained and runnable locally, while fol
 - Templating: Helm values files per component
 - monitoring and visualization: Prometheus and Grafana
 
+```mermaid
+flowchart TB
+    User((User)) --> Ingress[ingress-nginx]
+
+    subgraph Cluster["kind cluster (local)"]
+        Ingress --> Frontend[vikunja-frontend]
+        Ingress --> Backend[vikunja-backend]
+        Ingress --> KC[Keycloak<br/>OIDC provider]
+
+        Frontend -- API calls --> Backend
+        Backend -- OIDC --> KC
+        Backend --> DB[(PostgreSQL<br/>vikunja-db)]
+
+        HPA[HPA<br/>CPU-based] -. scales .-> Backend
+
+        Prometheus[Prometheus] -- scrapes --> Backend
+        Prometheus --> Grafana[Grafana dashboards]
+    end
+```
+
 ## Why Helm?
 Helm was chosen as the deployment templating tool due to its strong ecosystem, native Kubernetes support, and ability to separate templates from environment-specific configuration. Each component (Vikunja backend, frontend, database, Keycloak, monitoring) is deployed with its own values file, allowing independent configuration and easier promotion to staging or production environments.
 

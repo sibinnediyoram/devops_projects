@@ -99,24 +99,18 @@ These are explicitly stated so reviewers can evaluate my reasoning, not just the
 
 ### Service Architecture
 
-```
-Internet
-   │
-   ▼
-Hetzner Cloud Load Balancer (Layer 4)
-   │
-   ▼
-Traefik Ingress Controller (Layer 7, TLS termination)
-   │
-   ├──► web-app (namespace: hetzner_demo-web)
-   │         │
-   │         └──► media-search-service (namespace: hetzner_demo-search)
-   │                    │
-   │                    └──► ElasticSearch (ECK-managed, hcloud-volumes PVCs)
-   │
-   └──► media-download-service (namespace: hetzner_demo-download)
-              │
-              └──► Object Storage (Hetzner S3-compatible)
+```mermaid
+flowchart TB
+    Internet((Internet)) --> LB[Hetzner Cloud Load Balancer<br/>Layer 4]
+    LB --> Traefik[Traefik Ingress Controller<br/>Layer 7, TLS termination]
+
+    Traefik --> WebApp["web-app<br/>(ns: hetzner_demo-web)"]
+    Traefik --> Download["media-download-service<br/>(ns: hetzner_demo-download)"]
+
+    WebApp --> Search["media-search-service<br/>(ns: hetzner_demo-search)"]
+    Search --> ES[(ElasticSearch<br/>ECK-managed, hcloud-volumes PVCs)]
+
+    Download --> ObjStore[(Object Storage<br/>Hetzner S3-compatible)]
 ```
 
 **Namespace isolation:** Each service runs in its own namespace with NetworkPolicies that restrict lateral movement. The Web App can call Search; nothing should call Download except through its ingress.

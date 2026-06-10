@@ -1,5 +1,41 @@
 # Solution
 
+## Architecture Overview
+
+```mermaid
+flowchart TB
+    Internet((Internet)) --> ALB[ALB<br/>provisioned by AWS Load Balancer Controller]
+
+    subgraph VPC["VPC (per environment)"]
+        subgraph Public["Public Subnets (multi-AZ)"]
+            ALB
+            NAT[NAT Gateway/s]
+        end
+
+        subgraph Private["Private Subnets (multi-AZ)"]
+            subgraph EKS["EKS Cluster"]
+                ALBC[ALB Controller<br/>IRSA]
+                MS[metrics-server]
+                NG[Managed Node Group<br/>EC2 worker nodes]
+                API[api Pods<br/>Helm chart]
+                HPA[HPA<br/>staging/prod]
+            end
+        end
+    end
+
+    OIDC[EKS OIDC Provider] -. IRSA .-> ALBC
+    ALBC -. manages .-> ALB
+    ALB --> API
+    NG --> API
+    NG --> MS
+    MS -. metrics .-> HPA
+    HPA -. scales .-> API
+    NG --> ALBC
+    API --> NAT --> Internet
+
+    IAM[IAM Principals<br/>engineers, CI/CD role] -. EKS Access Entries .-> EKS
+```
+
 ## Code Fixes
 
 The original files contained bugs and security issues corrected before building the infrastructure around them.

@@ -6,21 +6,39 @@ A modular AWS CDK (TypeScript) project that provisions a production-ready EKS-ba
 
 ## Architecture
 
-```
-VPC
-├── Public subnets  (ALB, NAT Gateways)
-└── Private subnets (EKS nodes, RDS)
-    │
-    ├── EKS Cluster
-    │   ├── Managed Node Group (auto-scaling)
-    │   ├── ALB Controller        (prod only)
-    │   ├── External DNS
-    │   └── Cluster Autoscaler
-    │
-    ├── RDS PostgreSQL            (private, encrypted)
-    └── ECR Repositories          (immutable tags, scan on push)
+```mermaid
+flowchart TB
+    Internet((Internet)) --> ALB[ALB<br/>prod only]
 
-KMS Customer Managed Key         (shared across RDS, ECR, Secrets Manager)
+    subgraph VPC
+        subgraph Public["Public Subnets"]
+            ALB
+            NAT[NAT Gateways]
+        end
+
+        subgraph Private["Private Subnets"]
+            subgraph EKS["EKS Cluster"]
+                NG[Managed Node Group<br/>auto-scaling]
+                ALBC[ALB Controller<br/>prod only]
+                EDNS[External DNS]
+                CA[Cluster Autoscaler]
+            end
+            RDS[(RDS PostgreSQL<br/>private, encrypted)]
+            ECR[ECR Repositories<br/>immutable tags, scan on push]
+        end
+    end
+
+    ALB --> NG
+    ALBC -. manages .-> ALB
+    EDNS -. Route53 records .-> ALB
+    CA -. scales .-> NG
+    NG --> RDS
+    NG -- pulls images --> ECR
+    NG --> NAT --> Internet
+
+    KMS[KMS Customer Managed Key] -. encrypts .-> RDS
+    KMS -. encrypts .-> ECR
+    KMS -. encrypts .-> SM[Secrets Manager]
 ```
 
 ---
